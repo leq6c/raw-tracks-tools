@@ -161,7 +161,7 @@ export async function normalizeVideoTrackToM4V(
   // TODO: allow caller to set this
   const bitRate = '5000k';
 
-  const baseArgs = ['-r', frameRate, '-b:v', bitRate, '-c:v', 'libx264'];
+  const baseArgs = ['-r', frameRate, '-b:v', bitRate, '-c:v', 'libx264', '-preset', 'ultrafast'];
   let args;
 
   const tmpDir = '/tmp';

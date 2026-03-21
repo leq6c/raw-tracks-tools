@@ -67,6 +67,7 @@ Takes one or two webm files from raw-tracks recordings and processes them into a
 - Audio and video tracks are padded so they start at the same time
 
 If you pass both a video and an audio file, a combined MPEG-4 file is written.
+When a video track is normalized, the tool also writes a `*.gaps.json` sidecar next to the video output. If a combined MP4 is produced, the gap timestamps are relative to that combined file's playback timeline.
 
 Example usage:
 
