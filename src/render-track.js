@@ -119,11 +119,88 @@ async function normalizeAudioTrackToWav(
   await runFfmpegCommandAsync(`audio_${ctxName}_wav`, args);
 }
 
+async function renderBlackGapSegment(
+  ctxName,
+  gapIdx,
+  videoSize,
+  duration,
+  baseArgs,
+  dst
+) {
+  const args = [
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=black:s=${videoSize.w}x${videoSize.h},format=yuv420p,scale=out_color_matrix=bt709:out_range=tv`,
+    '-t',
+    duration,
+    ...baseArgs,
+    dst,
+  ];
+  await runFfmpegCommandAsync(`rendergap_${gapIdx}_${ctxName}`, args);
+}
+
+async function renderHoldGapSegment(
+  ctxName,
+  gapIdx,
+  gap,
+  duration,
+  tmpSource,
+  sourceOffset,
+  frameRate,
+  baseArgs,
+  dst,
+  tmpDir,
+  tmpFiles
+) {
+  const holdFrameOffset = gap.start - sourceOffset;
+  if (holdFrameOffset <= 0) {
+    return false;
+  }
+
+  const frameStep = 1 / Math.max(frameRate, 1);
+  const frameSeekTime = Math.max(holdFrameOffset - frameStep, 0);
+  const holdFramePath = Path.resolve(
+    tmpDir,
+    `${g_tempFilePrefix}${ctxName}_hold${gapIdx}.png`
+  );
+  tmpFiles.push(holdFramePath);
+
+  let args = [
+    '-ss',
+    frameSeekTime,
+    '-i',
+    tmpSource,
+    '-frames:v',
+    '1',
+    holdFramePath,
+  ];
+  await runFfmpegCommandAsync(`extracthold_${gapIdx}_${ctxName}`, args);
+
+  args = [
+    '-loop',
+    '1',
+    '-framerate',
+    frameRate,
+    '-i',
+    holdFramePath,
+    '-vf',
+    'format=yuv420p,scale=out_color_matrix=bt709:out_range=tv',
+    '-t',
+    duration,
+    ...baseArgs,
+    dst,
+  ];
+  await runFfmpegCommandAsync(`renderhold_${gapIdx}_${ctxName}`, args);
+  return true;
+}
+
 export async function normalizeVideoTrackToM4V(
   ctxName,
   analysis,
   inputPath,
-  outputPath
+  outputPath,
+  opts = {}
 ) {
   if (!analysis?.isVideo)
     throw new Error('normalizeVideoTrack expects video input');
@@ -140,6 +217,10 @@ export async function normalizeVideoTrackToM4V(
     throw new Error('normalizeVideoTrack expects analysis.videoSize to be set');
 
   const { videoSize, frameRate = 30, endTime, gaps } = analysis;
+  const gapFill = opts.gapFill || 'black';
+  if (!['black', 'hold'].includes(gapFill)) {
+    throw new Error(`Unsupported gap fill mode "${gapFill}"`);
+  }
 
   const segments = [];
   let t = 0;
@@ -205,17 +286,32 @@ export async function normalizeVideoTrackToM4V(
     tmpFiles.push(dst);
 
     if (type === 'gap') {
-      const args = [
-        '-f',
-        'lavfi',
-        '-i',
-        `color=c=black:s=${videoSize.w}x${videoSize.h},format=yuv420p,scale=out_color_matrix=bt709:out_range=tv`,
-        '-t',
-        duration,
-        ...baseArgs,
-        dst,
-      ];
-      await runFfmpegCommandAsync(`rendergap_${i}_${ctxName}`, args);
+      let didRenderHold = false;
+      if (gapFill === 'hold') {
+        didRenderHold = await renderHoldGapSegment(
+          ctxName,
+          i,
+          segments[i],
+          duration,
+          tmpSource,
+          sourceOffset,
+          frameRate,
+          baseArgs,
+          dst,
+          tmpDir,
+          tmpFiles
+        );
+      }
+      if (!didRenderHold) {
+        await renderBlackGapSegment(
+          ctxName,
+          i,
+          videoSize,
+          duration,
+          baseArgs,
+          dst
+        );
+      }
     } else {
       const args = [
         '-ss',

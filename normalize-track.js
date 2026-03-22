@@ -76,6 +76,9 @@ const args = parseArgs({
     'audio-codec': {
       type: 'string',
     },
+    'gap-fill': {
+      type: 'string',
+    },
   },
 });
 
@@ -94,6 +97,12 @@ if (args.values.output_dir) {
 const audioCodec = (args.values['audio-codec'] || 'aac').toLowerCase();
 if (!['aac', 'wav'].includes(audioCodec)) {
   console.error('audio-codec must be either "aac" or "wav"');
+  process.exit(1);
+}
+
+const gapFill = (args.values['gap-fill'] || 'black').toLowerCase();
+if (!['black', 'hold'].includes(gapFill)) {
+  console.error('gap-fill must be either "black" or "hold"');
   process.exit(1);
 }
 
@@ -124,7 +133,8 @@ for (const inputPath of args.values.input) {
       basename,
       analysis,
       inputPath,
-      videoOutputPath
+      videoOutputPath,
+      { gapFill }
     );
     videoPath = videoOutputPath;
     combinedOutputPath = Path.resolve(outputDir, basename + '_combined.mp4');

@@ -68,6 +68,7 @@ Takes one or two webm files from raw-tracks recordings and processes them into a
 
 If you pass both a video and an audio file, a combined MPEG-4 file is written.
 When a video track is normalized, the tool also writes a `*.gaps.json` sidecar next to the video output. If a combined MP4 is produced, the gap timestamps are relative to that combined file's playback timeline.
+Pass `--gap-fill hold` to freeze the last good frame across detected gaps instead of rendering them as black. Leading gaps still render as black because there is no prior frame to hold.
 
 Example usage:
 
