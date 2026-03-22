@@ -1,5 +1,8 @@
 import { runFfprobeCommandAsync } from './ffprobe.js';
 
+const MAX_REASONABLE_FRAME_RATE = 120;
+const COMMON_FRAME_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+
 export async function analyzeTrack(ctxName, inputPath, opts = {}) {
   const { frames, streams } = await runFfprobeCommandAsync(ctxName, [
     '-show_frames',
@@ -50,17 +53,7 @@ export async function analyzeTrack(ctxName, inputPath, opts = {}) {
       h,
     };
 
-    let fps = 30;
-    const fpsStr = ret.streamMetadata.r_frame_rate;
-    let idx;
-    if ((idx = fpsStr.indexOf('/'))) {
-      let nom = parseFloat(fpsStr.substring(idx));
-      let den = parseFloat(fpsStr.substring(idx + 1));
-      if (isFinite(nom) && isFinite(den) && den > 0) {
-        fps = nom / den;
-      }
-    }
-    ret.frameRate = fps;
+    ret.frameRate = estimateFrameRate(frames, ret.streamMetadata);
   }
 
   ret.gaps = findGaps(frames, opts.minGapDurationInSecs);
@@ -89,4 +82,72 @@ function findGaps(frames, gapMinDuration = 0.5) {
   }
 
   return arr;
+}
+
+function estimateFrameRate(frames, streamMetadata) {
+  const candidates = [
+    parseFrameRate(streamMetadata?.avg_frame_rate),
+    estimateFrameRateFromFrames(frames),
+    parseFrameRate(streamMetadata?.r_frame_rate),
+  ];
+
+  for (const fps of candidates) {
+    if (isFinite(fps) && fps > 0 && fps <= MAX_REASONABLE_FRAME_RATE) {
+      return snapFrameRate(fps);
+    }
+  }
+
+  return 30;
+}
+
+function parseFrameRate(fpsStr) {
+  if (!fpsStr || fpsStr === '0/0') return null;
+
+  const idx = fpsStr.indexOf('/');
+  if (idx > 0) {
+    const nom = parseFloat(fpsStr.substring(0, idx));
+    const den = parseFloat(fpsStr.substring(idx + 1));
+    if (isFinite(nom) && isFinite(den) && den > 0) {
+      return nom / den;
+    }
+  }
+
+  const value = parseFloat(fpsStr);
+  return isFinite(value) ? value : null;
+}
+
+function estimateFrameRateFromFrames(frames) {
+  const intervals = [];
+
+  for (let i = 1; i < frames.length; i++) {
+    const delta = frames[i].pts_time - frames[i - 1].pts_time;
+    if (delta > 0 && delta < 0.2) {
+      intervals.push(delta);
+    }
+  }
+
+  if (intervals.length < 10) return null;
+
+  intervals.sort((a, b) => a - b);
+  const trim = Math.floor(intervals.length * 0.1);
+  const trimmed =
+    trim > 0 ? intervals.slice(trim, intervals.length - trim) : intervals;
+
+  if (trimmed.length < 1) return null;
+
+  const avgInterval =
+    trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length;
+  if (!isFinite(avgInterval) || avgInterval <= 0) return null;
+
+  return 1 / avgInterval;
+}
+
+function snapFrameRate(fps) {
+  for (const candidate of COMMON_FRAME_RATES) {
+    if (Math.abs(fps - candidate) / candidate <= 0.03) {
+      return candidate;
+    }
+  }
+
+  return Math.round(fps * 1000) / 1000;
 }

@@ -221,6 +221,8 @@ export async function normalizeVideoTrackToM4V(
   if (!['black', 'hold'].includes(gapFill)) {
     throw new Error(`Unsupported gap fill mode "${gapFill}"`);
   }
+  const sourceFilter = `scale=${videoSize.w}x${videoSize.h}:out_color_matrix=bt709:out_range=tv,format=yuv420p`;
+  const segmentFilter = 'setpts=PTS-STARTPTS,format=yuv420p';
 
   const segments = [];
   let t = 0;
@@ -265,7 +267,7 @@ export async function normalizeVideoTrackToM4V(
     '-i',
     inputPath,
     '-vf',
-    `scale=${videoSize.w}x${videoSize.h}:out_color_matrix=bt709:out_range=tv`,
+    sourceFilter,
     ...baseArgs,
     tmpSource,
   ];
@@ -276,8 +278,7 @@ export async function normalizeVideoTrackToM4V(
   for (let i = 0; i < segments.length; i++) {
     const { start, end, type } = segments[i];
 
-    // round duration to milliseconds
-    const duration = Math.round((end - start) * 1000) / 1000;
+    const duration = Math.max(end - start, 0);
 
     const tmpFileName = `${g_tempFilePrefix}${ctxName}_seg${i}.m4v`;
     ffmpegConcatFile += `file '${tmpFileName}'\n`;
@@ -320,8 +321,9 @@ export async function normalizeVideoTrackToM4V(
         duration,
         '-i',
         tmpSource,
-        '-c',
-        'copy',
+        '-vf',
+        segmentFilter,
+        ...baseArgs,
         dst,
       ];
       await runFfmpegCommandAsync(`extractseg_${i}_${ctxName}`, args);
