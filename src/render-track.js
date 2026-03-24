@@ -241,6 +241,10 @@ export async function normalizeVideoTrackToM4V(
 
   console.log('video segments to be written: ', segments);
 
+  if (segments.length > 3) {
+    throw new Error('Too many segments to render');
+  }
+
   // TODO: allow caller to set this
   const bitRate = '5000k';
 
